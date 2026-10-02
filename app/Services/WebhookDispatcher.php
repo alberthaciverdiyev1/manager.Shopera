@@ -14,8 +14,16 @@ class WebhookDispatcher
 {
     public function dispatch(SiteOwner $owner, string $event = 'entitlements.updated', array $extra = []): bool
     {
+        return $this->dispatchResult($owner, $event, $extra)['ok'];
+    }
+
+    /**
+     * @return array{ok:bool,url?:string,status?:int,message:string,body?:string}
+     */
+    public function dispatchResult(SiteOwner $owner, string $event = 'entitlements.updated', array $extra = []): array
+    {
         if (empty($owner->instance_url) || empty($owner->webhook_secret)) {
-            return false;
+            return ['ok' => false, 'message' => 'Instance URL or webhook secret is missing.'];
         }
 
         $owner->loadMissing('domains');
@@ -37,22 +45,54 @@ class WebhookDispatcher
 
         // Provisioning runs migrations, so give it time.
         $timeout = $event === 'tenant.provision' ? 180 : 6;
+        $url = $this->webhookUrl($owner);
+        $hostHeader = $this->webhookHost($owner, $primary);
 
         try {
-            $response = Http::timeout($timeout)
+            $request = Http::timeout($timeout)
+                ->retry($event === 'tenant.provision' ? 2 : 1, 500)
                 ->withHeaders([
                     'Content-Type' => 'application/json',
                     'X-Manager-Event' => $event,
                     'X-Manager-Signature' => $signature,
                 ])
-                ->withBody($body, 'application/json')
-                ->post(rtrim($owner->instance_url, '/').'/api/manager/webhook');
+                ->when($hostHeader !== '', fn ($http) => $http->withHeader('Host', $hostHeader))
+                ->withBody($body, 'application/json');
 
-            return $response->successful();
+            $response = $request->post($url);
+
+            $result = [
+                'ok' => $response->successful(),
+                'url' => $url,
+                'status' => $response->status(),
+                'message' => $response->successful() ? 'Webhook delivered.' : 'Webhook returned an error.',
+                'body' => substr((string) $response->body(), 0, 1000),
+            ];
+
+            if (! $result['ok']) {
+                Log::warning('Manager webhook returned an error', [
+                    'owner' => $owner->id,
+                    'event' => $event,
+                    'url' => $url,
+                    'status' => $response->status(),
+                    'body' => $result['body'],
+                ]);
+            }
+
+            return $result;
         } catch (\Throwable $e) {
-            Log::warning('Manager webhook failed', ['owner' => $owner->id, 'event' => $event, 'error' => $e->getMessage()]);
+            Log::warning('Manager webhook failed', [
+                'owner' => $owner->id,
+                'event' => $event,
+                'url' => $url,
+                'error' => $e->getMessage(),
+            ]);
 
-            return false;
+            return [
+                'ok' => false,
+                'url' => $url,
+                'message' => $e->getMessage(),
+            ];
         }
     }
 
@@ -68,13 +108,45 @@ class WebhookDispatcher
     /** Ask the instance to create + migrate this owner's tenant database. */
     public function provision(SiteOwner $owner, array $extra = []): bool
     {
+        return $this->provisionResult($owner, $extra)['ok'];
+    }
+
+    /**
+     * @return array{ok:bool,url?:string,status?:int,message:string,body?:string}
+     */
+    public function provisionResult(SiteOwner $owner, array $extra = []): array
+    {
         $owner->loadMissing('domains');
 
-        return $this->dispatch($owner, 'tenant.provision', array_merge([
+        return $this->dispatchResult($owner, 'tenant.provision', array_merge([
             'hosts' => $owner->domains->pluck('host')->all(),
             'tenant_slug' => $owner->tenantSlug(),
             'database' => $owner->db_name,
             'storage_root' => $owner->storageRoot(),
         ], $extra));
+    }
+
+    private function webhookUrl(SiteOwner $owner): string
+    {
+        $url = (string) config('manager.webhook_url');
+
+        if ($url === '') {
+            $url = rtrim($owner->instance_url, '/').'/api/manager/webhook';
+        }
+
+        return $url;
+    }
+
+    private function webhookHost(SiteOwner $owner, ?string $primary): string
+    {
+        $configured = (string) config('manager.webhook_host');
+
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $host = parse_url($owner->instance_url, PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? $host : (string) $primary;
     }
 }

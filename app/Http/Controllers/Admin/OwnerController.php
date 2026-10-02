@@ -63,7 +63,7 @@ class OwnerController extends Controller
         $this->syncOverrides($owner, $request->input('overrides', []));
 
         $owner->load('domains');
-        $provisioned = $this->webhooks->provision($owner, [
+        $provision = $this->webhooks->provisionResult($owner, [
             'admin_email' => $owner->email,
             'admin_password' => $adminPassword,
             'admin_name' => $owner->name,
@@ -71,7 +71,8 @@ class OwnerController extends Controller
         ]);
 
         session()->flash('created_store', [
-            'provisioned' => $provisioned,
+            'provisioned' => $provision['ok'],
+            'provision' => $provision,
             'database' => $owner->db_name,
             'storage_root' => $owner->storageRoot(),
             'token' => $owner->api_token,

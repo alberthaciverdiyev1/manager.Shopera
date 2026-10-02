@@ -15,6 +15,16 @@
             <div><span class="text-gray-500">Admin e-poçt:</span> <span class="font-medium">{{ $cs['admin_email'] }}</span></div>
             <div><span class="text-gray-500">Admin şifrə:</span> <span class="font-mono font-semibold">{{ $cs['admin_password'] }}</span></div>
             <div class="sm:col-span-2"><span class="text-gray-500">İnteqrasiya tokeni:</span> <span class="font-mono text-xs">{{ $cs['token'] }}</span></div>
+            @if (! $cs['provisioned'] && ! empty($cs['provision']))
+                <div class="sm:col-span-2 rounded-lg bg-white/70 p-3 text-xs">
+                    <div><span class="text-gray-500">Webhook URL:</span> <span class="font-mono">{{ $cs['provision']['url'] ?? '-' }}</span></div>
+                    <div><span class="text-gray-500">Status:</span> <span class="font-mono">{{ $cs['provision']['status'] ?? '-' }}</span></div>
+                    <div><span class="text-gray-500">Səbəb:</span> <span class="font-mono">{{ $cs['provision']['message'] ?? '-' }}</span></div>
+                    @if (! empty($cs['provision']['body']))
+                        <pre class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-gray-950 p-2 text-[11px] text-gray-100">{{ $cs['provision']['body'] }}</pre>
+                    @endif
+                </div>
+            @endif
         </div>
         <p class="mt-3 text-xs text-gray-500">Bu məlumatları kopyala və saxla — şifrə yalnız bir dəfə göstərilir.</p>
     </div>

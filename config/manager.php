@@ -23,4 +23,10 @@ return [
     // Pre-filled Instance URL for new owners (ShopEra base URL).
     'default_instance_url' => env('MANAGER_DEFAULT_INSTANCE_URL'),
 
+    // Optional server-internal webhook URL. Use this on production when the
+    // Manager and ShopEra instance live on the same server so provisioning does
+    // not depend on public DNS, Cloudflare, or a newly-created tenant SSL vhost.
+    'webhook_url' => env('MANAGER_WEBHOOK_URL'),
+    'webhook_host' => env('MANAGER_WEBHOOK_HOST', parse_url((string) env('MANAGER_DEFAULT_INSTANCE_URL'), PHP_URL_HOST) ?: null),
+
 ];
